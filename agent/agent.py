@@ -3,16 +3,16 @@ import os
 import requests
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-MODEL = "qwen2.5:7b"
+MODEL = "qwen2.5:3b"
 
 
-def test_chat():
+def test_chat(msg: str):
     """Testons si le llm recoit une requet"""
     payload = {
         "model": MODEL,
         "messages": [{
             "role": "user",
-            "content": "Réponds 'Prêt' si tu m'entends."
+            "content": f"Réponds 'Prêt' si tu m'entends. {msg}"
         }],
         "stream": False,
         "options": {"temperature": 0.1}
@@ -23,7 +23,7 @@ def test_chat():
         timeout=120
     )
     response.raise_for_status()
-    print(response.json()["messages"]["content"])
+    print(response.json()["message"]["content"])
 
 
 def wait_for_ollama():
@@ -67,7 +67,7 @@ if __name__ == "__main__":
             task = input("Task > ").strip()
             if task:
                 print(f"{task}")
-                test_chat()
+                test_chat(task)
         except KeyboardInterrupt:
             print("\n bye!")
             break
