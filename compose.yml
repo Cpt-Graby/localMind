@@ -9,7 +9,7 @@ services:
       - "11434:11434"
     restart: unless-stopped
   agent:
-    build: 
+    build:
       context: ./agent
       args:
         PYTHON_VERSION: "3.14"
@@ -18,4 +18,3 @@ services:
     tty: true
     depends_on:
       - ollama
-
