@@ -18,5 +18,7 @@ services:
     container_name: localmind_agent
     stdin_open: true
     tty: true
+    volumes:
+      - ./workspace:/workspace
     depends_on:
       - ollama

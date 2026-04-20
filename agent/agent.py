@@ -1,29 +1,101 @@
+import json
 import time
 import os
 import requests
+from prompt import SYSTEM_PROMPT
+from tools import execute_tool
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 MODEL = "qwen2.5:3b"
 
 
-def test_chat(msg: str):
+def call_llm(msg: list) -> str:
     """Testons si le llm recoit une requet"""
     payload = {
         "model": MODEL,
-        "messages": [{
-            "role": "user",
-            "content": f"Réponds 'Prêt' si tu m'entends. {msg}"
-        }],
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + msg,
         "stream": False,
         "options": {"temperature": 0.1}
     }
+    print(f"payload: {payload}")
+    print("─" * 50)
     response = requests.post(
         f"{OLLAMA_HOST}/api/chat",
         json=payload,
         timeout=120
     )
     response.raise_for_status()
-    print(response.json()["message"]["content"])
+    return response.json()["message"]["content"]
+
+
+def parse_llm_response(raw: str) -> dict:
+    """Extrait le JSON de la réponse du LLM, même s'il y a du texte autour."""
+    raw = raw.strip()
+
+    # Cas idéal : réponse directement en JSON
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Cas fréquent : JSON dans un bloc ```json ... ```
+    if "```" in raw:
+        start = raw.find("```")
+        end = raw.rfind("```")
+        block = raw[start:end].strip("`").strip()
+        if block.startswith("json"):
+            block = block[4:].strip()
+        try:
+            return json.loads(block)
+        except json.JSONDecodeError:
+            pass
+
+    # Dernier recours : chercher { ... }
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start != -1 and end > start:
+        try:
+            return json.loads(raw[start:end])
+        except json.JSONDecodeError:
+            pass
+
+    return {"thought": "parse error", "tool": "bash", "params": {"cmd": "echo 'parse error'"}}
+
+
+def run_agent(_task: str):
+    print(f"\n Task: {_task}")
+    print("─" * 50)
+
+    history = []
+    history.append({"role": "user", "content": f"Task: {_task}"})
+    print(history)
+    print("─" * 50)
+    raw_response = call_llm(history)
+    print("─" * 50)
+    print(raw_response)
+    print("─" * 50)
+    decision = parse_llm_response(raw_response)
+    thought = decision.get("thought", "")
+    tool = decision.get("tool", "")
+    params = decision.get("params", {})
+    print(f"thought: {thought}.")
+    print(f"[-]Tool: {tool} | Params: {params}")
+    history.append({"role": "assistant", "content": raw_response})
+    result = execute_tool(tool, params)
+
+    # 5. Check fin de tâche
+    if result.startswith("FINISH:"):
+        summary = result[7:]
+        print(f"\nDone! {summary}")
+        return
+
+    print(f"Result: {result[:200]}{'...' if len(result) > 200 else ''}")
+
+    # 6. Ajoute le résultat à l'historique pour le prochain tour
+    history.append({
+        "role": "user",
+        "content": f"Tool result:\n{result}"
+    })
 
 
 def wait_for_ollama():
@@ -41,7 +113,7 @@ def wait_for_ollama():
             pass
         time.sleep(2)
         tries += 1
-    raise Exception("[-] Erreur : Ollama est injoignable après 60 secondes.")
+    raise Exception("[-] Erreur : Ollama est injoignable.")
 
 
 def pull_model_if_needed():
@@ -66,8 +138,7 @@ if __name__ == "__main__":
         try:
             task = input("Task > ").strip()
             if task:
-                print(f"{task}")
-                test_chat(task)
+                run_agent(task)
         except KeyboardInterrupt:
             print("\n bye!")
             break
